@@ -1,0 +1,197 @@
+// Prisma Schema for Flowency Backlog
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// CLIENTS (Tenants)
+// ============================================
+model Client {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  logoUrl     String?   @map("logo_url")
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  archivedAt  DateTime? @map("archived_at")
+
+  // Relations
+  users       User[]
+  pbis        Pbi[]
+  invitations Invitation[]
+  activities  ActivityLog[]
+
+  @@map("clients")
+}
+
+// ============================================
+// USERS
+// ============================================
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  avatarUrl     String?   @map("avatar_url")
+  role          UserRole
+  clientId      String?   @map("client_id")
+  emailVerified Boolean   @default(false) @map("email_verified")
+  passwordHash  String?   @map("password_hash")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  lastLoginAt   DateTime? @map("last_login_at")
+
+  // Relations
+  client           Client?       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  pbisCreated      Pbi[]         @relation("PbiCreator")
+  comments         Comment[]
+  attachments      Attachment[]
+  invitationsSent  Invitation[]  @relation("InvitedBy")
+  activities       ActivityLog[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  flowency_admin
+  client_admin
+  client_member
+}
+
+// ============================================
+// INVITATIONS
+// ============================================
+model Invitation {
+  id         String    @id @default(uuid())
+  email      String
+  clientId   String    @map("client_id")
+  role       UserRole
+  token      String    @unique
+  invitedBy  String    @map("invited_by")
+  expiresAt  DateTime  @map("expires_at")
+  acceptedAt DateTime? @map("accepted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  client  Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  inviter User   @relation("InvitedBy", fields: [invitedBy], references: [id])
+
+  @@map("invitations")
+}
+
+// ============================================
+// PRODUCT BACKLOG ITEMS (PBIs)
+// ============================================
+model Pbi {
+  id            String    @id @default(uuid())
+  clientId      String    @map("client_id")
+  title         String
+  description   String?
+  type          PbiType
+  status        PbiStatus @default(todo)
+  effort        Effort?
+  stackPosition Int       @map("stack_position")
+  createdBy     String    @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  creator     User         @relation("PbiCreator", fields: [createdBy], references: [id])
+  comments    Comment[]
+  attachments Attachment[]
+
+  @@unique([clientId, stackPosition])
+  @@index([clientId])
+  @@index([status])
+  @@map("pbis")
+}
+
+enum PbiType {
+  feature
+  bug
+  tweak
+  idea
+}
+
+enum PbiStatus {
+  todo
+  in_progress
+  done
+  blocked
+}
+
+enum Effort {
+  XS
+  S
+  M
+  L
+  XL
+}
+
+// ============================================
+// COMMENTS
+// ============================================
+model Comment {
+  id        String   @id @default(uuid())
+  pbiId     String   @map("pbi_id")
+  userId    String   @map("user_id")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  pbi  Pbi  @relation(fields: [pbiId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([pbiId])
+  @@map("comments")
+}
+
+// ============================================
+// ATTACHMENTS
+// ============================================
+model Attachment {
+  id          String   @id @default(uuid())
+  pbiId       String   @map("pbi_id")
+  filename    String
+  s3Key       String   @map("s3_key")
+  contentType String   @map("content_type")
+  sizeBytes   Int      @map("size_bytes")
+  uploadedBy  String   @map("uploaded_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  pbi      Pbi  @relation(fields: [pbiId], references: [id], onDelete: Cascade)
+  uploader User @relation(fields: [uploadedBy], references: [id])
+
+  @@index([pbiId])
+  @@map("attachments")
+}
+
+// ============================================
+// ACTIVITY LOG
+// ============================================
+model ActivityLog {
+  id         String   @id @default(uuid())
+  clientId   String   @map("client_id")
+  userId     String?  @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  details    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([clientId])
+  @@map("activity_log")
+}
